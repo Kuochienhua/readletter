@@ -1,0 +1,378 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>信件掃描辨識系統</title>
+    <style>
+        :root {
+            --primary-color: #4a90e2;
+            --bg-color: #f5f7fa;
+            --card-bg: #ffffff;
+            --text-color: #333;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+        }
+
+        h1 {
+            text-align: center;
+            grid-column: 1 / -1;
+            color: var(--primary-color);
+            margin-bottom: 30px;
+        }
+
+        .card {
+            background: var(--card-bg);
+            padding: 20px;
+            border-radius: 12px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+
+        .camera-section {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        #videoElement {
+            width: 100%;
+            max-width: 640px;
+            border-radius: 8px;
+            background-color: #000;
+            /* transform: scaleX(-1); Mirror effect removed for text readability */
+        }
+
+        #canvas {
+            display: none;
+        }
+
+        .controls {
+            margin-top: 15px;
+            display: flex;
+            gap: 10px;
+        }
+
+        button {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 16px;
+            transition: background 0.3s;
+        }
+
+        .btn-primary {
+            background-color: var(--primary-color);
+            color: white;
+        }
+
+        .btn-primary:hover {
+            background-color: #357abd;
+        }
+
+        .btn-secondary {
+            background-color: #e0e0e0;
+            color: #333;
+        }
+
+        .result-section {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .form-group {
+            margin-bottom: 15px;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+            color: #666;
+        }
+
+        input,
+        textarea {
+            width: 100%;
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            box-sizing: border-box;
+        }
+
+        .history-section {
+            grid-column: 1 / -1;
+            margin-top: 20px;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            background: white;
+            border-radius: 8px;
+            overflow: hidden;
+        }
+
+        th,
+        td {
+            padding: 12px;
+            text-align: left;
+            border-bottom: 1px solid #eee;
+        }
+
+        th {
+            background-color: #f8f9fa;
+            font-weight: 600;
+        }
+
+        .loading {
+            display: none;
+            text-align: center;
+            margin-top: 10px;
+            color: var(--primary-color);
+        }
+
+        .status-bar {
+            margin-top: 10px;
+            font-size: 14px;
+            color: #666;
+            text-align: center;
+            padding: 8px;
+            background: #f8f9fa;
+            border-radius: 4px;
+        }
+
+        @media (max-width: 768px) {
+            .container {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <h1>📧 智慧信件掃描辨識系統</h1>
+
+        <div class="card camera-section">
+            <h2>掃描區域</h2>
+            <video id="videoElement" autoplay playsinline></video>
+            <canvas id="canvas"></canvas>
+            <div class="controls">
+                <button id="startBtn" class="btn-secondary">開啟相機</button>
+                <button id="scanBtn" class="btn-primary" disabled>📸 拍照並辨識</button>
+            </div>
+            <div class="status-bar">
+                <span id="camResolution">相機解析度: 未知</span> |
+                <span id="apiStatus">Gemini API: 檢查中...</span> |
+                <span id="tokenUsage">本次消耗 Token: -</span>
+            </div>
+            <div id="loading" class="loading">
+                正在分析信件資訊，請稍候...
+            </div>
+        </div>
+
+        <div class="card result-section">
+            <h2>辨識結果</h2>
+            <div class="form-group">
+                <label>寄件人 (Sender)</label>
+                <input type="text" id="senderName" readonly>
+            </div>
+            <div class="form-group">
+                <label>寄件地址 (Sender Address)</label>
+                <input type="text" id="senderAddress" readonly>
+            </div>
+            <div class="form-group">
+                <label>收件人 (Recipient)</label>
+                <input type="text" id="recipientName" readonly>
+            </div>
+            <div class="form-group">
+                <label>收件地址 (Recipient Address)</label>
+                <input type="text" id="recipientAddress" readonly>
+            </div>
+            <div class="form-group">
+                <label>寄件日期 (Send Date)</label>
+                <input type="text" id="sendDate" readonly>
+            </div>
+        </div>
+
+        <div class="card history-section">
+            <h2>掃描紀錄</h2>
+            <table id="historyTable">
+                <thead>
+                    <tr>
+                        <th>掃描時間</th>
+                        <th>寄件人</th>
+                        <th>寄件地址</th>
+                        <th>收件人</th>
+                        <th>收件地址</th>
+                        <th>寄件日期</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <!-- History items will be populated here -->
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <script>
+        const video = document.getElementById('videoElement');
+        const canvas = document.getElementById('canvas');
+        const startBtn = document.getElementById('startBtn');
+        const scanBtn = document.getElementById('scanBtn');
+        const loading = document.getElementById('loading');
+        const camResolution = document.getElementById('camResolution');
+        const apiStatus = document.getElementById('apiStatus');
+        const tokenUsage = document.getElementById('tokenUsage');
+
+        let stream = null;
+
+        // Check API Status
+        async function checkApiStatus() {
+            try {
+                const response = await fetch('/api/status');
+                const data = await response.json();
+                if (data.gemini_connected) {
+                    apiStatus.innerHTML = 'Gemini API: <span style="color:green">● 連線成功</span>';
+                } else {
+                    apiStatus.innerHTML = 'Gemini API: <span style="color:red">● 連線失敗</span>';
+                }
+            } catch (e) {
+                apiStatus.innerHTML = 'Gemini API: <span style="color:red">● 錯誤</span>';
+            }
+        }
+        checkApiStatus();
+
+        // Start Camera
+        startBtn.addEventListener('click', async () => {
+            try {
+                stream = await navigator.mediaDevices.getUserMedia({
+                    video: {
+                        width: { ideal: 3840 },
+                        height: { ideal: 2160 }
+                    }
+                });
+                video.srcObject = stream;
+                startBtn.disabled = true;
+                scanBtn.disabled = false;
+                startBtn.textContent = '相機已開啟';
+
+                // Get actual resolution
+                const track = stream.getVideoTracks()[0];
+                const settings = track.getSettings();
+                camResolution.textContent = `相機解析度: ${settings.width} x ${settings.height}`;
+
+            } catch (err) {
+                console.error("Error accessing camera:", err);
+                alert("無法存取相機，請確認權限設定。");
+            }
+        });
+
+        // Scan & Analyze
+        scanBtn.addEventListener('click', async () => {
+            if (!stream) return;
+
+            // Capture image at full resolution
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+            const ctx = canvas.getContext('2d');
+
+            // Draw image without scaling
+            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+            // Use high quality JPEG
+            const imageData = canvas.toDataURL('image/jpeg', 1.0);
+
+            // UI Update
+            loading.style.display = 'block';
+            scanBtn.disabled = true;
+            tokenUsage.textContent = '本次消耗 Token: 計算中...';
+
+            try {
+                const response = await fetch('/api/scan', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ image: imageData })
+                });
+
+                const data = await response.json();
+
+                if (response.ok) {
+                    // Fill form
+                    document.getElementById('senderName').value = data.sender_name || '';
+                    document.getElementById('senderAddress').value = data.sender_address || '';
+                    document.getElementById('recipientName').value = data.recipient_name || '';
+                    document.getElementById('recipientAddress').value = data.recipient_address || '';
+                    document.getElementById('sendDate').value = data.send_date || '';
+
+                    // Update Token Usage
+                    if (data.usage) {
+                        tokenUsage.textContent = `本次消耗 Token: ${data.usage.total_token_count} (Prompt: ${data.usage.prompt_token_count}, Output: ${data.usage.candidates_token_count})`;
+                    } else {
+                        tokenUsage.textContent = '本次消耗 Token: 未知';
+                    }
+
+                    // Refresh history
+                    loadHistory();
+                } else {
+                    alert('辨識失敗: ' + (data.error || '未知錯誤'));
+                }
+            } catch (err) {
+                console.error(err);
+                alert('發生錯誤，請檢查伺服器連線。');
+            } finally {
+                loading.style.display = 'none';
+                scanBtn.disabled = false;
+            }
+        });
+
+        // Load History
+        async function loadHistory() {
+            try {
+                const response = await fetch('/api/history');
+                const history = await response.json();
+
+                const tbody = document.querySelector('#historyTable tbody');
+                tbody.innerHTML = '';
+
+                history.forEach(item => {
+                    const row = document.createElement('tr');
+                    row.innerHTML = `
+                        <td>${item.scan_date}</td>
+                        <td>${item.sender_name || '-'}</td>
+                        <td>${item.sender_address || '-'}</td>
+                        <td>${item.recipient_name || '-'}</td>
+                        <td>${item.recipient_address || '-'}</td>
+                        <td>${item.send_date || '-'}</td>
+                    `;
+                    tbody.appendChild(row);
+                });
+            } catch (err) {
+                console.error("Failed to load history:", err);
+            }
+        }
+
+        // Initial load
+        loadHistory();
+    </script>
+</body>
+
+</html>
